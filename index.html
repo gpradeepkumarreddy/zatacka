@@ -18,7 +18,28 @@
       z-index: 10;
       font-size: 20px;
       display: flex;
+      align-items: center;
       gap: 20px;
+    }
+    #roundSelector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+    }
+    .round-btn {
+      padding: 4px 10px;
+      background: #222;
+      border: 1px solid #555;
+      color: white;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 14px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .round-btn.active {
+      background: #555;
+      border-color: #aaa;
     }
     #playAgain {
       position: fixed;
@@ -71,6 +92,11 @@
   <div id="hud">
     <span id="score1">🔴 Red: 0</span>
     <span id="score2">🔵 Cyan: 0</span>
+    <div id="roundSelector">
+      <span>Rounds to win:</span>
+      <button class="round-btn" data-rounds="5">5</button>
+      <button class="round-btn active" data-rounds="10">10</button>
+    </div>
   </div>
   <button id="playAgain">Play Again</button>
   <div id="message"></div>
@@ -83,6 +109,7 @@
     const score1El = document.getElementById('score1');
     const score2El = document.getElementById('score2');
     const msgEl = document.getElementById('message');
+    const roundButtons = document.querySelectorAll('.round-btn');
 
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -101,7 +128,7 @@
     const speed = 3;
     const turnSpeed = 0.08;
     const lineWidth = 3;
-    const maxScore = 10;
+    let maxScore = 10;
 
     let players, gameRunning;
     let scores = [0, 0]; // [red, cyan]
@@ -325,6 +352,24 @@ function resetGame() {
     }
 
     btnPlayAgain.addEventListener('click', startNextRound);
+
+    function changeTargetRounds(value, button) {
+      if (maxScore === value) return;
+      maxScore = value;
+      roundButtons.forEach(btn => btn.classList.toggle('active', btn === button));
+      scores = [0, 0];
+      matchOver = false;
+      updateScore();
+      awaitingRestart = false;
+      resetGame();
+    }
+
+    roundButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const value = parseInt(button.dataset.rounds, 10);
+        changeTargetRounds(value, button);
+      });
+    });
 
     // Start the first game
     resetGame();
