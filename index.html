@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Zatacka (Curve Game with Score)</title>
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      background: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #hud {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      font-size: 20px;
+      display: flex;
+      gap: 20px;
+    }
+    #playAgain {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      padding: 8px 14px;
+      background: #333;
+      border: 1px solid #666;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+      font-size: 16px;
+      display: none;
+    }
+    #playAgain.show {
+      animation: pulse 1s infinite;
+    }
+    canvas {
+      display: block;
+      background: #000;
+    }
+
+    /* Winner / countdown message */
+    #message {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(0.9);
+      font-size: 48px;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(255,255,255,0.8);
+      opacity: 0;
+      transition: opacity 0.4s, transform 0.4s;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #message.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    @keyframes pulse {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <span id="score1">🔴 Red: 0</span>
+    <span id="score2">🔵 Cyan: 0</span>
+  </div>
+  <button id="playAgain">Play Again</button>
+  <div id="message"></div>
+  <canvas id="game"></canvas>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const btnPlayAgain = document.getElementById('playAgain');
+    const score1El = document.getElementById('score1');
+    const score2El = document.getElementById('score2');
+    const msgEl = document.getElementById('message');
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        startNextRound();
+      }
+      initAudio(); // ensure audio context is resumed on first interaction
+    });
+    window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+    const speed = 3;
+    const turnSpeed = 0.08;
+    const lineWidth = 3;
+    const maxScore = 10;
+
+    let players, gameRunning;
+    let scores = [0, 0]; // [red, cyan]
+    let matchOver = false;
+    let countdownInterval = null;
+    let awaitingRestart = false;
+
+    // ---- AUDIO ----
+    let audioCtx = null;
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) {
+          audioCtx = new AudioContext();
+        }
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playSound(freqs, duration = 0.1) {
+      if (!audioCtx) return;
+      const now = audioCtx.currentTime;
+
+      freqs.forEach((f, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(f, now + i * duration);
+        gain.gain.setValueAtTime(0.15, now + i * duration);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + (i + 1) * duration);
+        osc.start(now + i * duration);
+        osc.stop(now + (i + 1) * duration);
+      });
+    }
+
+    function playCrashSound() {
+      playSound([200, 120], 0.08);
+    }
+
+    function playWinSound() {
+      playSound([440, 660, 880], 0.13);
+    }
+
+    // ---- GAME LOGIC ----
+function resetGame() {
+  // Random spawn margins
+  const margin = 150;
+
+  // preserved spacing between players
+  const spacing = 400; // based on original (600 - 200)
+
+  // random center point for player 1
+  const p1x = margin + Math.random() * (canvas.width - 2 * margin);
+  const p1y = margin + Math.random() * (canvas.height - 2 * margin);
+
+  // random angle around p1 for player 2
+  const angle = Math.random() * Math.PI * 2;
+
+  // player 2 position based on spacing
+  const p2x = p1x + Math.cos(angle) * spacing;
+  const p2y = p1y + Math.sin(angle) * spacing;
+
+  // If p2 accidentally lands out of bounds, regenerate
+  if (
+    p2x < margin || p2x > canvas.width - margin ||
+    p2y < margin || p2y > canvas.height - margin
+  ) {
+    return resetGame(); // try again
+  }
+
+  // Players face opposite directions
+  const p1Angle = angle;           // look outward
+  const p2Angle = angle + Math.PI; // look opposite direction
+
+  players = [
+    { x: p1x, y: p1y, angle: p1Angle, color: 'red', left: 'a', right: 'd', alive: true },
+    { x: p2x, y: p2y, angle: p2Angle, color: 'cyan', left: 'j', right: 'l', alive: true },
+  ];
+
+  // Clear screen
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  gameRunning = false;
+  btnPlayAgain.style.display = 'none';
+  btnPlayAgain.classList.remove('show');
+  awaitingRestart = false;
+
+  startCountdown();  // countdown animation (your existing function)
+}
+
+
+    function startCountdown() {
+      let count = 3;
+      msgEl.textContent = count;
+      msgEl.classList.add('show');
+
+      countdownInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          msgEl.textContent = count;
+        } else if (count === 0) {
+          msgEl.textContent = 'GO!';
+          setTimeout(() => {
+            msgEl.classList.remove('show');
+          }, 400);
+        } else {
+          clearInterval(countdownInterval);
+          countdownInterval = null;
+          gameRunning = true;
+          loop();
+        }
+      }, 800);
+    }
+
+    function movePlayers() {
+      for (const p of players) {
+        if (!p.alive) continue;
+
+        if (keys[p.left]) p.angle -= turnSpeed;
+        if (keys[p.right]) p.angle += turnSpeed;
+
+        const newX = p.x + Math.cos(p.angle) * speed;
+        const newY = p.y + Math.sin(p.angle) * speed;
+
+        // Wall collision
+        if (
+          newX < 0 || newY < 0 ||
+          newX >= canvas.width || newY >= canvas.height
+        ) {
+          p.alive = false;
+          playCrashSound();
+          continue;
+        }
+
+        // Trail collision
+        const data = ctx.getImageData(newX, newY, 1, 1).data;
+        if (data[0] !== 0 || data[1] !== 0 || data[2] !== 0) {
+          p.alive = false;
+          playCrashSound();
+          continue;
+        }
+
+        ctx.strokeStyle = p.color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(newX, newY);
+        ctx.stroke();
+
+        p.x = newX;
+        p.y = newY;
+      }
+
+      // Check if game over
+      const alivePlayers = players.filter(p => p.alive);
+      if (gameRunning && alivePlayers.length <= 1) {
+        gameRunning = false;
+        handleRoundEnd(alivePlayers);
+      }
+    }
+
+    function handleRoundEnd(alivePlayers) {
+      let messageText = '';
+
+      if (alivePlayers.length === 1) {
+        const winnerIndex = players.indexOf(alivePlayers[0]);
+        scores[winnerIndex]++;
+        updateScore();
+
+        const winnerName = winnerIndex === 0 ? 'Red' : 'Cyan';
+        if (scores[winnerIndex] >= maxScore) {
+          matchOver = true;
+          messageText = `${winnerName} wins the match!`;
+          btnPlayAgain.textContent = 'New Match';
+        } else {
+          messageText = `${winnerName} wins the round!`;
+          btnPlayAgain.textContent = 'Next Round';
+        }
+
+        playWinSound();
+      } else {
+        // Both died at the same time
+        messageText = 'Draw!';
+        btnPlayAgain.textContent = 'Play Again';
+      }
+
+      msgEl.textContent = messageText;
+      msgEl.classList.add('show');
+
+      btnPlayAgain.style.display = 'block';
+      btnPlayAgain.classList.add('show');
+      awaitingRestart = true;
+    }
+
+    function updateScore() {
+      score1El.textContent = `🔴 Red: ${scores[0]}`;
+      score2El.textContent = `🔵 Cyan: ${scores[1]}`;
+    }
+
+    function loop() {
+      if (!gameRunning) return;
+      movePlayers();
+      requestAnimationFrame(loop);
+    }
+
+    function startNextRound() {
+      if (!awaitingRestart) return;
+      if (matchOver) {
+        // reset match scores if a full match has been won
+        scores = [0, 0];
+        matchOver = false;
+        updateScore();
+      }
+      awaitingRestart = false;
+      resetGame();
+    }
+
+    btnPlayAgain.addEventListener('click', startNextRound);
+
+    // Start the first game
+    resetGame();
+  </script>
+</body>
+</html>
