@@ -59,7 +59,18 @@
     }
     canvas {
       display: block;
+    }
+    #game {
       background: #000;
+    }
+    #confetti {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 5;
+      pointer-events: none;
     }
 
     /* Winner / countdown message */
@@ -101,18 +112,27 @@
   <button id="playAgain">Play Again</button>
   <div id="message"></div>
   <canvas id="game"></canvas>
+  <canvas id="confetti"></canvas>
 
   <script>
     const canvas = document.getElementById('game');
     const ctx = canvas.getContext('2d');
+    const confettiCanvas = document.getElementById('confetti');
+    const confettiCtx = confettiCanvas.getContext('2d');
     const btnPlayAgain = document.getElementById('playAgain');
     const score1El = document.getElementById('score1');
     const score2El = document.getElementById('score2');
     const msgEl = document.getElementById('message');
     const roundButtons = document.querySelectorAll('.round-btn');
 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    function sizeCanvases() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      confettiCanvas.width = window.innerWidth;
+      confettiCanvas.height = window.innerHeight;
+    }
+
+    sizeCanvases();
 
     const keys = {};
     window.addEventListener('keydown', e => {
@@ -135,6 +155,8 @@
     let matchOver = false;
     let countdownInterval = null;
     let awaitingRestart = false;
+    let confettiParticles = [];
+    let confettiAnimationId = null;
 
     // ---- AUDIO ----
     let audioCtx = null;
@@ -176,8 +198,65 @@
       playSound([440, 660, 880], 0.13);
     }
 
+    function clearConfetti() {
+      if (confettiAnimationId) {
+        cancelAnimationFrame(confettiAnimationId);
+        confettiAnimationId = null;
+      }
+      confettiParticles = [];
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+    }
+
+    function triggerConfetti(color) {
+      clearConfetti();
+      const particleCount = 140;
+      for (let i = 0; i < particleCount; i++) {
+        confettiParticles.push({
+          x: Math.random() * confettiCanvas.width,
+          y: -20 - Math.random() * confettiCanvas.height * 0.2,
+          vx: (Math.random() - 0.5) * 2,
+          vy: 2 + Math.random() * 2,
+          size: 4 + Math.random() * 4,
+          rotation: Math.random() * Math.PI * 2,
+          vr: -0.05 + Math.random() * 0.1,
+          life: 1,
+          decay: 0.0025 + Math.random() * 0.005,
+          color
+        });
+      }
+      animateConfetti();
+    }
+
+    function animateConfetti() {
+      confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      confettiParticles = confettiParticles.filter(p => p.life > 0);
+      for (const p of confettiParticles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.rotation += p.vr;
+        p.life -= p.decay;
+
+        confettiCtx.save();
+        confettiCtx.translate(p.x, p.y);
+        confettiCtx.rotate(p.rotation);
+        confettiCtx.globalAlpha = Math.max(p.life, 0);
+        confettiCtx.fillStyle = p.color;
+        confettiCtx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+        confettiCtx.restore();
+      }
+
+      if (confettiParticles.length === 0) {
+        confettiAnimationId = null;
+        confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+        return;
+      }
+
+      confettiAnimationId = requestAnimationFrame(animateConfetti);
+    }
+
     // ---- GAME LOGIC ----
 function resetGame() {
+  clearConfetti();
   // Random spawn margins
   const margin = 150;
 
@@ -314,10 +393,12 @@ function resetGame() {
         }
 
         playWinSound();
+        triggerConfetti(players[winnerIndex].color);
       } else {
         // Both died at the same time
         messageText = 'Draw!';
         btnPlayAgain.textContent = 'Play Again';
+        clearConfetti();
       }
 
       msgEl.textContent = messageText;
