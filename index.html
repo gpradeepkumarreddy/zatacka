@@ -16,10 +16,37 @@
       top: 10px;
       left: 10px;
       z-index: 10;
-      font-size: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-size: 18px;
+    }
+    #scoreboard {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .score-entry {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 18px;
+    }
+    .score-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    #selectorsRow {
       display: flex;
       align-items: center;
       gap: 20px;
+      flex-wrap: wrap;
+      font-size: 16px;
     }
     #roundSelector {
       display: flex;
@@ -27,7 +54,13 @@
       gap: 10px;
       font-size: 16px;
     }
-    .round-btn {
+    #playerSelector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .round-btn,
+    .player-btn {
       padding: 4px 10px;
       background: #222;
       border: 1px solid #555;
@@ -37,9 +70,39 @@
       font-size: 14px;
       transition: background 0.2s, border-color 0.2s;
     }
-    .round-btn.active {
+    .round-btn.active,
+    .player-btn.active {
       background: #555;
       border-color: #aaa;
+    }
+    #controlsPanel {
+      font-size: 14px;
+    }
+    #controlsPanel strong {
+      font-size: 15px;
+    }
+    #controlsList {
+      list-style: none;
+      padding: 4px 0 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .control-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .control-keys {
+      color: #ccc;
+      font-size: 13px;
     }
     #playAgain {
       position: fixed;
@@ -101,12 +164,24 @@
 </head>
 <body>
   <div id="hud">
-    <span id="score1">🔴 Red: 0</span>
-    <span id="score2">🔵 Cyan: 0</span>
-    <div id="roundSelector">
-      <span>Rounds to win:</span>
-      <button class="round-btn" data-rounds="5">5</button>
-      <button class="round-btn active" data-rounds="10">10</button>
+    <div id="scoreboard"></div>
+    <div id="selectorsRow">
+      <div id="roundSelector">
+        <span>Rounds to win:</span>
+        <button class="round-btn" data-rounds="5">5</button>
+        <button class="round-btn active" data-rounds="10">10</button>
+      </div>
+      <div id="playerSelector">
+        <span>Players:</span>
+        <button class="player-btn active" data-players="2">2</button>
+        <button class="player-btn" data-players="3">3</button>
+        <button class="player-btn" data-players="4">4</button>
+        <button class="player-btn" data-players="5">5</button>
+      </div>
+    </div>
+    <div id="controlsPanel">
+      <strong>Controls:</strong>
+      <ul id="controlsList"></ul>
     </div>
   </div>
   <button id="playAgain">Play Again</button>
@@ -120,10 +195,11 @@
     const confettiCanvas = document.getElementById('confetti');
     const confettiCtx = confettiCanvas.getContext('2d');
     const btnPlayAgain = document.getElementById('playAgain');
-    const score1El = document.getElementById('score1');
-    const score2El = document.getElementById('score2');
     const msgEl = document.getElementById('message');
     const roundButtons = document.querySelectorAll('.round-btn');
+    const playerButtons = document.querySelectorAll('.player-btn');
+    const scoreboardEl = document.getElementById('scoreboard');
+    const controlsListEl = document.getElementById('controlsList');
 
     function sizeCanvases() {
       canvas.width = window.innerWidth;
@@ -133,6 +209,7 @@
     }
 
     sizeCanvases();
+    window.addEventListener('resize', sizeCanvases);
 
     const keys = {};
     window.addEventListener('keydown', e => {
@@ -145,18 +222,28 @@
     });
     window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
+    const playerConfigs = [
+      { name: 'Red', color: 'red', leftKey: 'a', rightKey: 'd', keysLabel: 'A / D' },
+      { name: 'Cyan', color: 'cyan', leftKey: 'j', rightKey: 'l', keysLabel: 'J / L' },
+      { name: 'Green', color: 'lime', leftKey: 'arrowleft', rightKey: 'arrowright', keysLabel: '← / →' },
+      { name: 'Yellow', color: 'yellow', leftKey: 'v', rightKey: 'n', keysLabel: 'V / N' },
+      { name: 'Purple', color: 'magenta', leftKey: '1', rightKey: '3', keysLabel: '1 / 3' },
+    ];
+
     const speed = 3;
     const turnSpeed = 0.08;
     const lineWidth = 3;
     let maxScore = 10;
 
+    let activePlayerCount = 2;
     let players, gameRunning;
-    let scores = [0, 0]; // [red, cyan]
+    let scores = [];
     let matchOver = false;
     let countdownInterval = null;
     let awaitingRestart = false;
     let confettiParticles = [];
     let confettiAnimationId = null;
+    let confettiActive = false;
 
     // ---- AUDIO ----
     let audioCtx = null;
@@ -205,10 +292,13 @@
       }
       confettiParticles = [];
       confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+      confettiActive = false;
     }
 
     function triggerConfetti(color) {
+      if (confettiActive) return;
       clearConfetti();
+      confettiActive = true;
       const particleCount = 140;
       for (let i = 0; i < particleCount; i++) {
         confettiParticles.push({
@@ -248,6 +338,7 @@
       if (confettiParticles.length === 0) {
         confettiAnimationId = null;
         confettiCtx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+        confettiActive = false;
         return;
       }
 
@@ -255,53 +346,54 @@
     }
 
     // ---- GAME LOGIC ----
-function resetGame() {
-  clearConfetti();
-  // Random spawn margins
-  const margin = 150;
+    function resetGame() {
+      clearConfetti();
+      const margin = 150;
+      const minDistance = 200;
+      const maxAttempts = 300;
 
-  // preserved spacing between players
-  const spacing = 400; // based on original (600 - 200)
+      players = [];
 
-  // random center point for player 1
-  const p1x = margin + Math.random() * (canvas.width - 2 * margin);
-  const p1y = margin + Math.random() * (canvas.height - 2 * margin);
+      for (let i = 0; i < activePlayerCount; i++) {
+        const config = playerConfigs[i];
+        let placed = false;
+        let px = 0;
+        let py = 0;
+        for (let attempt = 0; attempt < maxAttempts && !placed; attempt++) {
+          px = margin + Math.random() * (canvas.width - 2 * margin);
+          py = margin + Math.random() * (canvas.height - 2 * margin);
+          placed = players.every(other => {
+            const dx = other.x - px;
+            const dy = other.y - py;
+            return Math.hypot(dx, dy) >= minDistance;
+          });
+        }
+        if (!placed) {
+          px = margin + Math.random() * (canvas.width - 2 * margin);
+          py = margin + Math.random() * (canvas.height - 2 * margin);
+        }
 
-  // random angle around p1 for player 2
-  const angle = Math.random() * Math.PI * 2;
+        players.push({
+          x: px,
+          y: py,
+          angle: Math.random() * Math.PI * 2,
+          color: config.color,
+          left: config.leftKey,
+          right: config.rightKey,
+          alive: true,
+        });
+      }
 
-  // player 2 position based on spacing
-  const p2x = p1x + Math.cos(angle) * spacing;
-  const p2y = p1y + Math.sin(angle) * spacing;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // If p2 accidentally lands out of bounds, regenerate
-  if (
-    p2x < margin || p2x > canvas.width - margin ||
-    p2y < margin || p2y > canvas.height - margin
-  ) {
-    return resetGame(); // try again
-  }
+      gameRunning = false;
+      btnPlayAgain.style.display = 'none';
+      btnPlayAgain.classList.remove('show');
+      awaitingRestart = false;
 
-  // Players face opposite directions
-  const p1Angle = angle;           // look outward
-  const p2Angle = angle + Math.PI; // look opposite direction
-
-  players = [
-    { x: p1x, y: p1y, angle: p1Angle, color: 'red', left: 'a', right: 'd', alive: true },
-    { x: p2x, y: p2y, angle: p2Angle, color: 'cyan', left: 'j', right: 'l', alive: true },
-  ];
-
-  // Clear screen
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  gameRunning = false;
-  btnPlayAgain.style.display = 'none';
-  btnPlayAgain.classList.remove('show');
-  awaitingRestart = false;
-
-  startCountdown();  // countdown animation (your existing function)
-}
+      startCountdown();  // countdown animation (your existing function)
+    }
 
 
     function startCountdown() {
@@ -382,7 +474,7 @@ function resetGame() {
         scores[winnerIndex]++;
         updateScore();
 
-        const winnerName = winnerIndex === 0 ? 'Red' : 'Cyan';
+        const winnerName = playerConfigs[winnerIndex].name;
         if (scores[winnerIndex] >= maxScore) {
           matchOver = true;
           messageText = `${winnerName} wins the match!`;
@@ -410,8 +502,41 @@ function resetGame() {
     }
 
     function updateScore() {
-      score1El.textContent = `🔴 Red: ${scores[0]}`;
-      score2El.textContent = `🔵 Cyan: ${scores[1]}`;
+      scoreboardEl.innerHTML = '';
+      for (let i = 0; i < activePlayerCount; i++) {
+        const entry = document.createElement('span');
+        entry.className = 'score-entry';
+        const dot = document.createElement('span');
+        dot.className = 'score-dot';
+        dot.style.background = playerConfigs[i].color;
+        entry.appendChild(dot);
+        entry.appendChild(document.createTextNode(`${playerConfigs[i].name}: ${scores[i] ?? 0}`));
+        scoreboardEl.appendChild(entry);
+      }
+    }
+
+    function renderControls() {
+      controlsListEl.innerHTML = '';
+      for (let i = 0; i < activePlayerCount; i++) {
+        const config = playerConfigs[i];
+        const li = document.createElement('li');
+        li.className = 'control-item';
+        const color = document.createElement('span');
+        color.className = 'control-color';
+        color.style.background = config.color;
+        const label = document.createElement('span');
+        label.textContent = config.name;
+        const keys = document.createElement('span');
+        keys.className = 'control-keys';
+        keys.textContent = config.keysLabel;
+        li.append(color, label, keys);
+        controlsListEl.appendChild(li);
+      }
+    }
+
+    function initScores() {
+      scores = Array.from({ length: activePlayerCount }, () => 0);
+      updateScore();
     }
 
     function loop() {
@@ -423,10 +548,8 @@ function resetGame() {
     function startNextRound() {
       if (!awaitingRestart) return;
       if (matchOver) {
-        // reset match scores if a full match has been won
-        scores = [0, 0];
         matchOver = false;
-        updateScore();
+        initScores();
       }
       awaitingRestart = false;
       resetGame();
@@ -438,10 +561,20 @@ function resetGame() {
       if (maxScore === value) return;
       maxScore = value;
       roundButtons.forEach(btn => btn.classList.toggle('active', btn === button));
-      scores = [0, 0];
       matchOver = false;
-      updateScore();
       awaitingRestart = false;
+      initScores();
+      resetGame();
+    }
+
+    function changePlayerCount(value, button) {
+      if (activePlayerCount === value || value < 2 || value > playerConfigs.length) return;
+      activePlayerCount = value;
+      playerButtons.forEach(btn => btn.classList.toggle('active', btn === button));
+      matchOver = false;
+      awaitingRestart = false;
+      renderControls();
+      initScores();
       resetGame();
     }
 
@@ -452,6 +585,15 @@ function resetGame() {
       });
     });
 
+    playerButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const value = parseInt(button.dataset.players, 10);
+        changePlayerCount(value, button);
+      });
+    });
+
+    renderControls();
+    initScores();
     // Start the first game
     resetGame();
   </script>
