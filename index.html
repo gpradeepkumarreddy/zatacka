@@ -154,6 +154,21 @@
       opacity: 1;
       transform: translate(-50%, -50%) scale(1);
     }
+    #continueHint {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 20px;
+      color: #fff;
+      opacity: 0;
+      transition: opacity 0.4s;
+      pointer-events: none;
+      text-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    #continueHint.show {
+      opacity: 0.9;
+    }
 
     @keyframes pulse {
       0%   { transform: scale(1); }
@@ -188,6 +203,7 @@
   <div id="message"></div>
   <canvas id="game"></canvas>
   <canvas id="confetti"></canvas>
+  <div id="continueHint">Press Space to continue</div>
 
   <script>
     const canvas = document.getElementById('game');
@@ -196,6 +212,7 @@
     const confettiCtx = confettiCanvas.getContext('2d');
     const btnPlayAgain = document.getElementById('playAgain');
     const msgEl = document.getElementById('message');
+    const continueHintEl = document.getElementById('continueHint');
     const roundButtons = document.querySelectorAll('.round-btn');
     const playerButtons = document.querySelectorAll('.player-btn');
     const scoreboardEl = document.getElementById('scoreboard');
@@ -390,6 +407,7 @@
       gameRunning = false;
       btnPlayAgain.style.display = 'none';
       btnPlayAgain.classList.remove('show');
+      continueHintEl.classList.remove('show');
       awaitingRestart = false;
 
       startCountdown();  // countdown animation (your existing function)
@@ -498,6 +516,7 @@
 
       btnPlayAgain.style.display = 'block';
       btnPlayAgain.classList.add('show');
+      continueHintEl.classList.add('show');
       awaitingRestart = true;
     }
 
@@ -552,6 +571,7 @@
         initScores();
       }
       awaitingRestart = false;
+      continueHintEl.classList.remove('show');
       resetGame();
     }
 
@@ -562,6 +582,7 @@
       maxScore = value;
       roundButtons.forEach(btn => btn.classList.toggle('active', btn === button));
       matchOver = false;
+      continueHintEl.classList.remove('show');
       awaitingRestart = false;
       initScores();
       resetGame();
@@ -572,6 +593,7 @@
       activePlayerCount = value;
       playerButtons.forEach(btn => btn.classList.toggle('active', btn === button));
       matchOver = false;
+      continueHintEl.classList.remove('show');
       awaitingRestart = false;
       renderControls();
       initScores();
